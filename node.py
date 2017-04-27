@@ -1,3 +1,5 @@
+import json
+import requests
 import urllib2
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
@@ -39,42 +41,60 @@ class Node(BaseHTTPRequestHandler):
             if (self.isAlive):
                 return
 
-    def sendResponse(self, data = None):
-        self.send_response(200) # 200 = OK
+    def send_POST(self):
+        return
+
+    def sendResponse(self, code = 200, data = ''):
+        self.send_response(code)
         self.end_headers()
         self.wfile.write(str(data).encode('utf-8'))
 
-    def do_Get(self, data = None, list_dest = []):
-    # menghandle request HTTP GET yang masuk ke node ini
+    def do_POST(self):
+    # menghandle request HTTP POST yang masuk ke node ini (dari node lain)
         try:
             args = self.path.split('/')
-            # mengecek siapa yang mengirim request
+            # mengecek command apa yang dikirim node lain
             if (len(args) == 2):
                 command = args[1]
                 if (command == 'heartbeat'): # dari leader
                     self.sendHeartbeatResponse()
                 elif (command == 'vote'): # dari candidate
                     self.sendVoteResponse()
-                elif (command == 'pause'):
+            else:
+                self.sendResponse(400) # Bad Request
+        except Exception as ex:
+            self.sendResponse(500) # Internal Server Error
+
+    def do_Get(self):
+    # menghandle request HTTP GET yang masuk ke node ini (dari client)
+        try:
+            args = self.path.split('/')
+            # mengecek command apa yang diminta client
+            if (len(args) == 2):
+                command = args[1]
+                if (command == 'pause'):
                     self.pause()
                 elif (command == 'resume'):
                     self.resume()
             elif (len(args) == 3):
                 command = args[1]
                 n = int(args[2])
-                if (command == 'prime'): # dari client
+                if (command == 'prime'):
                     self.sendPrimeRequest(n)
             else:
-                raise Exception()
+                self.sendResponse(400) # Bad Request
         except Exception as ex:
-            self.send_response(500) # 500 = Internal Server Error
-            self.end_headers()
+            self.sendResponse(500) # Internal Server Error
 
     def sendHeartbeat(self):
     # mengirim heartbeat, dilakukan oleh leader
+        # kirim heartbeat, kumpulkan respon nya
+        list_response = []
         for nodeID in list_nodeID:
             if (nodeID != self.node_id):
-                urllib2.urlopen("http://localhost:" + nodeID + "/heartbeat")
+                url = "http://localhost:" + nodeID + "/heartbeat"
+                req = requests.post(url, data = json.dumps(self.list_workerLoad))
+                list_response.append(req.text())
 
     def sendHeartbeatResponse(self):
     # mengirim heartbeat response, dilakukan oleh follower/candidate lain
@@ -87,24 +107,23 @@ class Node(BaseHTTPRequestHandler):
 
     def sendVoteResponse(self):
     # mengirim vote response, dilakukan oleh follower
-        # membaca pesan pada vote request
-        rawdata = self.rfile.read(int(self.headers.getheader('Content-Length')))
+        self.sendResponse(200, 'OK')
 
     def pause(self):
     # simulasi ketika node mati
         if (self.isAlive):
             isAlive = False
-            self.sendResponse('Node ' + self.node_id + ' now down.')
+            self.sendResponse(200, 'Node ' + self.node_id + ' now down.')
         else:
-            self.sendResponse('Node ' + self.node_id + ' already down.')
+            self.sendResponse(200, 'Node ' + self.node_id + ' already down.')
 
     def resume(self):
     # simulasi ketika node hidup kembali
         if (self.isAlive):
-            self.sendResponse('Node ' + self.node_id + ' already up.')
+            self.sendResponse(200, 'Node ' + self.node_id + ' already up.')
         else:
             isAlive = True
-            self.sendResponse('Node ' + self.node_id + ' now up.')
+            self.sendResponse(200, 'Node ' + self.node_id + ' now up.')
 
     def sendPrimeRequest(self, n):
     # meminta bilangan prima ke worker, dilakukan oleh leader/follower
