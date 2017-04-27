@@ -1,3 +1,8 @@
+'''Kelas Daemon
+Berfungsi mengirimkan hearthbeat berupa ID dan CPU usage.
+Informasi ini dikirim jika node meminta.
+Caranya, lakukan pemanggilan ke IP address:port'''
+
 from __future__ import print_function
 import os
 import psutil
