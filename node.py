@@ -24,7 +24,7 @@ class Node(BaseHTTPRequestHandler):
 
     def nodeMain(self):
     # program utama node, memilih peran sebagai apa
-        while(True)
+        while(True):
             if (self.leader_id == self.node_id):
                 self.leaderMain()
             elif (self.isCandidate):
@@ -45,6 +45,7 @@ class Node(BaseHTTPRequestHandler):
         while (True):
             if (self.isAlive):
                 # UNDER CONSTRUCTION, konsep doang ini
+                timeout = False
                 if (timeout):
                     self.isCandidate = True
                     break
@@ -129,7 +130,8 @@ class Node(BaseHTTPRequestHandler):
     def sendHeartbeatResponse(self):
     # mengirim heartbeat response, dilakukan oleh follower/candidate lain
         # membaca pesan pada heartbeat
-        rawdata = self.rfile.read(int(self.headers.getheader('Content-Length')))
+        # rawdata = self.rfile.read(int(self.headers.getheader('Content-Length')))
+        return
 
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
@@ -140,13 +142,13 @@ class Node(BaseHTTPRequestHandler):
         for response in responses:
             vote = response.content
             if (vote == 'OK'):
-                voteCount++
+                voteCount += 1
         # hasil apakah terpilih mayoritas
         return (voteCount >= (len(list_node) / 2 + 1))
 
     def sendVoteResponse(self):
     # mengirim vote response, dilakukan oleh follower
-        if (self.isAlreadyVoted)
+        if (self.isAlreadyVoted):
             self.sendResponse(200, 'NO')
         else:
             self.sendResponse(200, 'OK')
