@@ -4,6 +4,9 @@ import grequests
 import urllib2
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
+#baca daftar server dari file txt dan memasukkannya ke list
+listServer = [line.rstrip('\n') for line in open('listServer.txt')]
+
 class Node(BaseHTTPRequestHandler):
     def __init__(self, node_id, timeout = 1, list_worker = []):
     # create objek
@@ -20,7 +23,16 @@ class Node(BaseHTTPRequestHandler):
         self.isAlive = True
         self.isCandidate = False
         self.isAlreadyVoted = False
+        self.firstRequestToServer()
         self.nodeMain()
+
+    def firstRequestToServer(self) {
+    #mengirimkan request pertama kali ke server agar server mengirimkan
+    #informasi ke node
+        for server in listServer :
+            content = urllib2.urlopen(server).read()
+            print content
+    }
 
     def nodeMain(self):
     # program utama node, memilih peran sebagai apa
