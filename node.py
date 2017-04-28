@@ -1,5 +1,6 @@
 import json
 import requests
+import grequests
 import urllib2
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
@@ -17,34 +18,57 @@ class Node(BaseHTTPRequestHandler):
         self.list_nodeID = list_nodeID
         self.list_isNodeAlive = [True] * len(list_nodeID)
         self.isAlive = True
-        # jalankan peran leader/follower
-        if (self.leader_id == self.node_id):
-            self.leaderMain()
-        else:
-            self.followerMain()
+        self.isCandidate = False
+        self.isAlreadyVoted = False
+        self.nodeMain()
+
+    def nodeMain(self):
+    # program utama node, memilih peran sebagai apa
+        while(True)
+            if (self.leader_id == self.node_id):
+                self.leaderMain()
+            elif (self.isCandidate):
+                self.candidateMain()
+            else:
+                self.followerMain()
 
     def leaderMain(self):
     # program utama ketika berperan sebagai leader
         while (True):
             if (self.isAlive):
-                return
+                # UNDER CONSTRUCTION, konsep doang ini
+                self.sendHeartbeat()
 
     def followerMain(self):
     # program utama ketika berperan sebagai follower
+        self.isAlreadyVoted = False
         while (True):
             if (self.isAlive):
-                return
+                # UNDER CONSTRUCTION, konsep doang ini
+                if (timeout):
+                    self.isCandidate = True
+                    break
+                else:
+                    self.sendHeartbeatResponse()
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
-        while (True):
-            if (self.isAlive):
-                return
+        if (self.sendVoteRequest()):
+            self.leader_id = self.node_id
+            self.isCandidate = False
 
-    def send_POST(self):
-        return
+    def send_POST(self, data =''):
+        # persiapkan node tujuan
+        list_dest = []
+        for nodeID in list_nodeID:
+            if (nodeID != self.node_id):
+                url = "http://localhost:" + nodeID + "/heartbeat"
+                list_dest.append(url)
+        # kirim
+        job = (grequests.post(dest, data = data) for dest in list_dest)
+        return grequests.map(job)
 
-    def sendResponse(self, code = 200, data = ''):
+    def sendResponse(self, code, data = ''):
         self.send_response(code)
         self.end_headers()
         self.wfile.write(str(data).encode('utf-8'))
@@ -60,6 +84,8 @@ class Node(BaseHTTPRequestHandler):
                     self.sendHeartbeatResponse()
                 elif (command == 'vote'): # dari candidate
                     self.sendVoteResponse()
+                else:
+                    self.sendResponse(400) # Bad Request
             else:
                 self.sendResponse(400) # Bad Request
         except Exception as ex:
@@ -76,11 +102,15 @@ class Node(BaseHTTPRequestHandler):
                     self.pause()
                 elif (command == 'resume'):
                     self.resume()
+                else:
+                    self.sendResponse(400) # Bad Request
             elif (len(args) == 3):
                 command = args[1]
                 n = int(args[2])
                 if (command == 'prime'):
                     self.sendPrimeRequest(n)
+                else:
+                    self.sendResponse(400) # Bad Request
             else:
                 self.sendResponse(400) # Bad Request
         except Exception as ex:
@@ -88,13 +118,13 @@ class Node(BaseHTTPRequestHandler):
 
     def sendHeartbeat(self):
     # mengirim heartbeat, dilakukan oleh leader
-        # kirim heartbeat, kumpulkan respon nya
-        list_response = []
-        for nodeID in list_nodeID:
-            if (nodeID != self.node_id):
-                url = "http://localhost:" + nodeID + "/heartbeat"
-                req = requests.post(url, data = json.dumps(self.list_workerLoad))
-                list_response.append(req.text())
+        # persiapkan data dan kirim
+        data = json.dumps(self.list_workerLoad)
+        responses = self.send_POST(data)
+        # proses responses
+        majorityAlive = [0] * len(list_worker)
+        for response in responses:
+            list_isWorkerAlive = json.loads(response)
 
     def sendHeartbeatResponse(self):
     # mengirim heartbeat response, dilakukan oleh follower/candidate lain
@@ -103,11 +133,24 @@ class Node(BaseHTTPRequestHandler):
 
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
-        return
+        # kirim
+        responses = self.send_POST()
+        # proses responses
+        voteCount = 0
+        for response in responses:
+            vote = response.content
+            if (vote == 'OK'):
+                voteCount++
+        # hasil apakah terpilih mayoritas
+        return (voteCount >= (len(list_node) / 2 + 1))
 
     def sendVoteResponse(self):
     # mengirim vote response, dilakukan oleh follower
-        self.sendResponse(200, 'OK')
+        if (self.isAlreadyVoted)
+            self.sendResponse(200, 'NO')
+        else:
+            self.sendResponse(200, 'OK')
+            self.isAlreadyVoted = True
 
     def pause(self):
     # simulasi ketika node mati
