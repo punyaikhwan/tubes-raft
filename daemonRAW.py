@@ -10,6 +10,7 @@ import socket
 import requests
 import grequests
 import time
+import json
 from flask import request
 from BaseHTTPServer import HTTPServer
 from BaseHTTPServer import BaseHTTPRequestHandler
@@ -25,7 +26,7 @@ class Daemon():
 
     def sendHeartBeat(self):
         myDaemon = {"id": self.getID(), "CPU usage": self.getCPUusage()}
-        return myDaemon
+        return json.dumps(myDaemon)
     
     def broadcastToAllNodes(self):
         # kirim broadcast ke semua node

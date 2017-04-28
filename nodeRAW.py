@@ -1,6 +1,6 @@
 import urllib2
 import time
-
+import json
 from BaseHTTPServer import HTTPServer
 from BaseHTTPServer import BaseHTTPRequestHandler
 
@@ -46,7 +46,8 @@ class NodeHandler(BaseHTTPRequestHandler):
     def processHeartBeatServer(self):
     	content_len = int(self.headers.getheader('content-length', 0))
     	post_body = self.rfile.read(content_len)
-        print post_body
+        haha = json.loads(post_body)
+        print haha
 
 server = HTTPServer(("", PORT), NodeHandler)
 server.serve_forever()
