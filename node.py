@@ -58,7 +58,7 @@ class Node(BaseHTTPRequestHandler):
             self.leader_id = self.node_id
             self.isCandidate = False
 
-    def send_POST(self, command, data =''):
+    def broadcast(self, command, data =''):
         # persiapkan node tujuan
         list_dest = []
         for nodeID in list_nodeID:
@@ -121,7 +121,7 @@ class Node(BaseHTTPRequestHandler):
     # mengirim heartbeat, dilakukan oleh leader
         # persiapkan data dan kirim
         data = json.dumps(self.list_workerLoad)
-        responses = self.send_POST('/heartbeat', data)
+        responses = self.broadcast('/heartbeat', data)
         # proses responses
         majorityAlive = [0] * len(list_worker)
         for response in responses:
@@ -136,7 +136,7 @@ class Node(BaseHTTPRequestHandler):
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
         # kirim
-        responses = self.send_POST('/vote')
+        responses = self.broadcast('/vote')
         # proses responses
         voteCount = 0
         for response in responses:
