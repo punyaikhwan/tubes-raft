@@ -7,13 +7,10 @@ from __future__ import print_function
 import os
 import psutil
 import socket
-import requests
 import grequests
 import time
 import json
-from flask import request
-from BaseHTTPServer import HTTPServer
-from BaseHTTPServer import BaseHTTPRequestHandler
+
 interval = 2
 
 class Daemon():
@@ -25,14 +22,15 @@ class Daemon():
         return socket.gethostbyname(socket.gethostname())
 
     def sendHeartBeat(self):
-        myDaemon = {"id": self.getID(), "CPU usage": self.getCPUusage()}
+        myDaemon = {"id": self.getID(), "usage": self.getCPUusage()}
         return json.dumps(myDaemon)
     
     def broadcastToAllNodes(self):
         # kirim broadcast ke semua node
         job = (grequests.post(destNode+"/"+command, data = self.sendHeartBeat()) for destNode in listNodeAddress)
-        print(job)
-        return grequests.map(job)
+        content = grequests.map(job)
+        print(content)
+        return content
 
 
 listNodeAddress = [line.rstrip('\n') for line in open('listNodeAddress.txt')]
@@ -41,3 +39,4 @@ if __name__ == "__main__":
     while True:
         daemon = Daemon()
         daemon.broadcastToAllNodes()
+        time.sleep(2)
