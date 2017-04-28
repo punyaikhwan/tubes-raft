@@ -2,6 +2,8 @@ import json
 import requests
 import grequests
 import urllib2
+import thread
+import time
 from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
 
 #baca daftar server dari file txt dan memasukkannya ke list
@@ -23,19 +25,34 @@ class Node(BaseHTTPRequestHandler):
         self.isAlive = True
         self.isCandidate = False
         self.isAlreadyVoted = False
-        self.firstRequestToServer()
         self.nodeMain()
 
-    def firstRequestToServer(self) {
+    def requestToServer(self):
     #mengirimkan request pertama kali ke server agar server mengirimkan
     #informasi ke node
-        for server in listServer :
-            content = urllib2.urlopen(server).read()
-            print content
-    }
+        while True:
+            for server in listServer:
+                try:
+                    content = urllib2.urlopen(server).read()
+                    print content
+                except Exception as ex:
+                    print ex
+            time.sleep(2)
 
+    def timer(self):
+        while True:
+            print("1")
+            time.sleep(1)
+            print("2")
+            time.sleep(1)
     def nodeMain(self):
     # program utama node, memilih peran sebagai apa
+        try:
+            thread.start_new_thread(self.requestToServer, ())
+        except Exception as ex:
+            print "Error create request to server"
+            print ex
+
         while(True):
             if (self.leader_id == self.node_id):
                 self.leaderMain()

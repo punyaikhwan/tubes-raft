@@ -8,15 +8,14 @@ import os
 import psutil
 import socket
 import requests
+import grequests
 import time
 from flask import request
 from BaseHTTPServer import HTTPServer
 from BaseHTTPServer import BaseHTTPRequestHandler
-PORT = 13336
 interval = 2
 
-class DaemonHandler(BaseHTTPRequestHandler):
-
+class Daemon():
     def getCPUusage(self):
         return psutil.cpu_percent(interval=1)
 
@@ -27,16 +26,6 @@ class DaemonHandler(BaseHTTPRequestHandler):
     def sendHeartBeat(self):
         myDaemon = {"id": self.getID(), "CPU usage": self.getCPUusage()}
         return myDaemon
-
-    def do_GET(self):
-        try:
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(str(self.sendHeartBeat()).encode('utf-8'))
-        except Exception as ex:
-            self.send_response(500)
-            self.end_headers()
-            print(ex)
     
     def broadcastToAllNodes(self):
         # kirim broadcast ke semua node
@@ -44,23 +33,10 @@ class DaemonHandler(BaseHTTPRequestHandler):
         print(job)
         return grequests.map(job)
 
-    def get_ip(self):
-        """ Extract the client IP address from the HTTP request in a proxy-compatible way.
-
-        @return: IP address as a string or None if not available
-        """
-        if "HTTP_X_FORWARDED_FOR" in request.environ:
-            # Virtual host
-            ip = request.environ["HTTP_X_FORWARDED_FOR"]
-        elif "HTTP_HOST" in request.environ:
-            # Non-virtualhost
-            ip = request.environ["REMOTE_ADDR"]
-        else:
-            # Unit test code?
-            ip = None
-
-        return ip
 
 listNodeAddress = [line.rstrip('\n') for line in open('listNodeAddress.txt')]
-server = HTTPServer(("", PORT), DaemonHandler)
-server.serve_forever()
+command = 'server'
+if __name__ == "__main__":
+    while True:
+        daemon = Daemon()
+        daemon.broadcastToAllNodes()
