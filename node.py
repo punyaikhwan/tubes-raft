@@ -58,12 +58,12 @@ class Node(BaseHTTPRequestHandler):
             self.leader_id = self.node_id
             self.isCandidate = False
 
-    def send_POST(self, data =''):
+    def send_POST(self, command, data =''):
         # persiapkan node tujuan
         list_dest = []
         for nodeID in list_nodeID:
             if (nodeID != self.node_id):
-                url = "http://localhost:" + nodeID + "/heartbeat"
+                url = "http://localhost:" + nodeID + command
                 list_dest.append(url)
         # kirim
         job = (grequests.post(dest, data = data) for dest in list_dest)
@@ -121,7 +121,7 @@ class Node(BaseHTTPRequestHandler):
     # mengirim heartbeat, dilakukan oleh leader
         # persiapkan data dan kirim
         data = json.dumps(self.list_workerLoad)
-        responses = self.send_POST(data)
+        responses = self.send_POST('/heartbeat', data)
         # proses responses
         majorityAlive = [0] * len(list_worker)
         for response in responses:
@@ -136,7 +136,7 @@ class Node(BaseHTTPRequestHandler):
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
         # kirim
-        responses = self.send_POST()
+        responses = self.send_POST('/vote')
         # proses responses
         voteCount = 0
         for response in responses:
