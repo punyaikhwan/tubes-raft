@@ -4,7 +4,7 @@ import json
 from BaseHTTPServer import HTTPServer
 from BaseHTTPServer import BaseHTTPRequestHandler
 
-listServer = [line.rstrip('\n') for line in open('listServer.txt')]
+listServer = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
 PORT = 12345
 
 class NodeHandler(BaseHTTPRequestHandler):
