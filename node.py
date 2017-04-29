@@ -145,7 +145,7 @@ class Node():
     def initialize(self):
     # node pertama kali dinyalakan
         global address
-        print 'Starting... ' + address
+        print 'Starting... '
         self.isCandidate = False
         # nyalakan handler
         portNode = address.split(':')[2]
@@ -216,6 +216,7 @@ class Node():
         data = json.dumps(data)
         listResponse = self.broadcastToOtherNodes('/heartbeat', data)
         # lakukan konsensus (dapatkan mayoritas)
+        print 'Counting majority...'
         # UNDER CONSTRUCTION
 
     def sendVoteRequest(self):
@@ -237,10 +238,10 @@ class Node():
 maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
 
 # GLOBAL VARIABLE, DIPAKE DI Node DAN NodeHandler
-address = 'http://localhost:13000'
+address = ''
 isAlive = True
 isAlreadyVoted = False
-leaderAddress = 'http://localhost:13000'
+leaderAddress = ''
 listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
 listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
 listWorkerLoad = [maxload] * len(listWorkerAddress)
@@ -248,6 +249,12 @@ listWorkerLoadLeader = []
 timeout = 1
 
 # PROGRAM UTAMA
-node = Node()
-node.initialize()
-node.run()
+if (len(sys.argv) == 4):
+    address = 'http://localhost:' + sys.argv[1]
+    timeout = sys.argv[2]
+    leaderAddress = 'http://localhost:' + sys.argv[3]
+    node = Node()
+    node.initialize()
+    node.run()
+else:
+    print 'usage: node.py <port> <timeout> <leaderPort>'

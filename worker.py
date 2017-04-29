@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+import sys
 from BaseHTTPServer import HTTPServer
 from BaseHTTPServer import BaseHTTPRequestHandler
-PORT = 13337
 
 class WorkerHandler(BaseHTTPRequestHandler):
     def prime(self, n):
@@ -34,5 +34,9 @@ class WorkerHandler(BaseHTTPRequestHandler):
             self.end_headers()
             print(ex)
 
-server = HTTPServer(("", PORT), WorkerHandler)
-server.serve_forever()
+if (len(sys.argv) == 2):
+    PORT = int(sys.argv[1])
+    server = HTTPServer(("", PORT), WorkerHandler)
+    server.serve_forever()
+else:
+    print 'usage: worker.py <port>'
