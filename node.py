@@ -151,10 +151,8 @@ class Node():
         portNode = address.split(':')[2]
         self.handler = HTTPServer(("", int(portNode)), NodeHandler)
         thread.start_new_thread(self.handler.serve_forever, ())
-        # mulai kerja
-        self.nodeMain()
 
-    def nodeMain(self):
+    def run(self):
     # program utama node, memilih peran sebagai apa
         global address
         global leaderAddress
@@ -250,4 +248,6 @@ listWorkerLoadLeader = []
 timeout = 1
 
 # PROGRAM UTAMA
-Node().initialize()
+node = Node()
+node.initialize()
+node.run()
