@@ -1,56 +1,71 @@
+import grequests
 import json
 import requests
-import grequests
-import urllib2
 import sys
 import thread
-from BaseHTTPServer import HTTPServer, BaseHTTPRequestHandler
+import urllib2
+from BaseHTTPServer import BaseHTTPRequestHandler
+from BaseHTTPServer import HTTPServer
 
-# KONSTANTA
-maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
-
-# GLOBAL VARIABLE, DIPAKE DI Node DAN NodeHandler
-isAlreadyVoted = False
-isAlive = True
-listWorkerLoad = []
-listWorkerLoadLeader = []
-
+################################################################################
 
 class NodeHandler(BaseHTTPRequestHandler):
+    def getContent(self):
+        contentLength = int(self.headers.getheader('content-length', 0))
+        return self.rfile.read(contentLength)
+
     def sendResponse(self, code, data = ''):
         self.send_response(code)
         self.end_headers()
         self.wfile.write(str(data).encode('utf-8'))
 
     def sendHeartbeatResponse(self):
-    # mengirim heartbeat response, dilakukan oleh follower/candidate lain
+    # mengirim heartbeat response, dilakukan oleh follower
+        global isAlreadyVoted
+        global leaderAddress
         global listWorkerLoadLeader
         # membaca pesan pada heartbeat
-        content_len = int(self.headers.getheader('content-length', 0))
-        post_body = self.rfile.read(content_len)
-        # copy data leader
-        listWorkerLoadLeader = json.loads(post_body)
+        print 'Reading heartbeat...'
+        content = json.loads(self.getContent())
+        # cek apakah ini heartbeat dari leader baru
+        if (content[0] != leaderAddress):
+            leaderAddress = content[0]
+            isAlreadyVoted = False
+        # copy data dari leader
+        listWorkerLoadLeader = content[1]
         # response dengan punya dia
-        self.sendResponse(200, "Copied")
+        print 'Sending heartbeat response...'
+        data = json.dumps(listWorkerLoad)
+        self.sendResponse(200, data)
 
     def sendVoteResponse(self):
     # mengirim vote response, dilakukan oleh follower
         global isAlreadyVoted
+        print 'Vote request received from ', self.getContent()
         if (isAlreadyVoted):
+            print 'Sending vote response: OK'
             self.sendResponse(200, 'NO')
         else:
+            print 'Sending vote response: NO'
             self.sendResponse(200, 'OK')
             isAlreadyVoted = True
 
     def processHeartbeatServer(self):
+        global listWorkerAddress
         global listWorkerLoad
-        content_len = int(self.headers.getheader('content-length', 0))
-        post_body = self.rfile.read(content_len)
+        # membaca data worker
+        content = json.loads(self.getContent())
+        workerAddress = content[0]
+        print 'Workload info received from ', workerAddress
+        # simpan data workload
+        idxWorkerAddress = self.listWorkerAddress.index(workerAddress)
+        listWorkerLoad[idxWorkerAddress] = content[1]
 
     def pause(self):
     # simulasi ketika node mati
         global isAlive
         if (isAlive):
+            print 'Paused.'
             isAlive = False
             self.sendResponse(200, 'Node now down.')
         else:
@@ -62,17 +77,20 @@ class NodeHandler(BaseHTTPRequestHandler):
         if (isAlive):
             self.sendResponse(200, 'Node already up.')
         else:
+            print 'Resuming...'
             isAlive = True
             self.sendResponse(200, 'Node now up.')
 
     def sendPrimeRequest(self, n):
     # meminta bilangan prima ke worker, dilakukan oleh leader/follower
+        print 'Requesting prime number to worker...'
         # cari worker dengan load terkecil
         idxWorkerAddress = listWorkerLoad.index(min(listWorkerLoad))
-        workerAddress = self.listWorkerAddress[idxWorkerAddress] + '/'
+        workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
         # request bilangan prima
-        prime = urllib2.urlopen(workerAddress + n).read()
+        prime = str(urllib2.urlopen(workerAddress).read())
         # kirim hasilnya
+        print 'Sending prime number response: ', prime
         self.sendResponse(200, prime)
 
     def do_POST(self):
@@ -110,7 +128,7 @@ class NodeHandler(BaseHTTPRequestHandler):
                     self.sendResponse(400) # Bad Request
             elif (len(args) == 3):
                 command = str(args[1])
-                n = int(args[2])
+                n = str(args[2])
                 if (command == 'prime'):
                     self.sendPrimeRequest(n)
                 else:
@@ -121,46 +139,16 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.sendResponse(500) # Internal Server Error
             print ex
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+################################################################################
 
 class Node():
-    def __init__(self, address, timeout, listWorkerAddress = []):
-    # create objek
-        print 'Creating... ' + address
-        global listWorkerLoad
-        self.address = address # ID node ini
-        self.timeout = int(timeout)
-        self.listWorkerAddress = listWorkerAddress
-        listWorkerLoad = [0] * len(listWorkerAddress)
-
-    def initialize(self, leaderAddress, listNodeAddress = []):
+    def initialize(self):
     # node pertama kali dinyalakan
+        global address
         print 'Starting... ' + address
-        global isAlive
-        global isAlreadyVoted
-        self.leaderAddress = leaderAddress
-        self.listNodeAddress = listNodeAddress
-        self.listIsNodeAlive = [True] * len(listNodeAddress)
-        isAlive = True
         self.isCandidate = False
-        isAlreadyVoted = False
         # nyalakan handler
-        portNode = self.address.split(':')[2]
+        portNode = address.split(':')[2]
         self.handler = HTTPServer(("", int(portNode)), NodeHandler)
         thread.start_new_thread(self.handler.serve_forever, ())
         # mulai kerja
@@ -168,9 +156,11 @@ class Node():
 
     def nodeMain(self):
     # program utama node, memilih peran sebagai apa
+        global address
+        global leaderAddress
         while(True):
-            print 'Determining job... ' + address
-            if (self.leaderAddress == self.address):
+            print 'Determining job...'
+            if (leaderAddress == address):
                 self.leaderMain()
             elif (self.isCandidate):
                 self.candidateMain()
@@ -179,8 +169,8 @@ class Node():
 
     def leaderMain(self):
     # program utama ketika berperan sebagai leader
-        print 'I am a leader! ' + address
         global isAlive
+        print 'I am a leader!'
         while (True):
             if (isAlive):
                 # UNDER CONSTRUCTION, konsep doang ini
@@ -188,29 +178,33 @@ class Node():
 
     def followerMain(self):
     # program utama ketika berperan sebagai follower
-        print 'I am a follower. ' + address
-        global isAlreadyVoted
-        isAlreadyVoted = False
+        global isAlive
+        print 'I am a follower.'
         while (True):
             if (isAlive):
                 # UNDER CONSTRUCTION, konsep doang ini
-                timeout = False
-                if (timeout):
+                isLeaderDead = False
+                if (isLeaderDead):
                     self.isCandidate = True
                     break
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
-        print 'I am a candidate! ' + address
+        global address
+        global leaderAddress
+        print 'I am a candidate!'
+        # minta vote, apakah mayoritas memilih dia
         if (self.sendVoteRequest()):
-            self.leaderAddress = self.address
             self.isCandidate = False
+            leaderAddress = address # terpilih jadi leader
 
-    def broadcastToOtherNodes(self, command, data =''):
+    def broadcastToOtherNodes(self, command, data = ''):
+        global address
+        global listNodeAddress
         # persiapkan node tujuan
         listDestinationAddress = []
         for nodeAddress in listNodeAddress:
-            if (nodeAddress != self.address):
+            if (nodeAddress != address):
                 listDestinationAddress.append(nodeAddress + command)
         # kirim
         job = (grequests.post(destinationAddress, data = data) for destinationAddress in listDestinationAddress)
@@ -218,28 +212,42 @@ class Node():
 
     def sendHeartbeat(self):
     # mengirim heartbeat, dilakukan oleh leader
-        print 'Sending heartbeat... ' + address
+        print 'Sending heartbeat...'
         # persiapkan data dan kirim
-        data = json.dumps(listWorkerLoad)
+        data = [address, listWorkerLoad]
+        data = json.dumps(data)
         listResponse = self.broadcastToOtherNodes('/heartbeat', data)
+        # lakukan konsensus (dapatkan mayoritas)
+        # UNDER CONSTRUCTION
 
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
-        print 'Requesting vote... ' + address
-        # kirim
-        responses = self.broadcastToOtherNodes('/vote')
-        # proses responses
+        global address
+        print 'Requesting vote...'
+        listResponse = self.broadcastToOtherNodes('/vote', address)
+        # proses listResponse
         voteCount = 0
-        for response in responses:
+        for response in listResponse:
             if (response.content == 'OK'):
                 voteCount += 1
         # hasil apakah terpilih mayoritas
         return (voteCount >= (len(list_node) / 2 + 1))
 
-#baca daftar server dari file txt dan memasukkannya ke list
+################################################################################
+
+# KONSTANTA
+maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
+
+# GLOBAL VARIABLE, DIPAKE DI Node DAN NodeHandler
+address = 'http://localhost:13000'
+isAlive = True
+isAlreadyVoted = False
+leaderAddress = 'http://localhost:13000'
+listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
 listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
-listNodeAddress = [line.rstrip('\n') for line in open('listNodeAddress.txt')]
+listWorkerLoad = [maxload] * len(listWorkerAddress)
+listWorkerLoadLeader = []
+timeout = 1
 
 # PROGRAM UTAMA
-address = 'http://localhost:13000'
-Node(address, 1).initialize(address, [address])
+Node().initialize()
