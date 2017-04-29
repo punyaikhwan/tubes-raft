@@ -7,14 +7,13 @@ from __future__ import print_function
 import os
 import psutil
 import socket
+import grequests
 import time
-from BaseHTTPServer import HTTPServer
-from BaseHTTPServer import BaseHTTPRequestHandler
-PORT = 13336
+import json
+
 interval = 2
 
-class DaemonHandler(BaseHTTPRequestHandler):
-
+class Daemon():
     def getCPUusage(self):
         return psutil.cpu_percent(interval=1)
 
@@ -23,20 +22,21 @@ class DaemonHandler(BaseHTTPRequestHandler):
         return socket.gethostbyname(socket.gethostname())
 
     def sendHeartBeat(self):
-        myDaemon = {"id": self.getID(), "CPU usage": self.getCPUusage()}
-        return myDaemon
+        myDaemon = {"id": self.getID(), "usage": self.getCPUusage()}
+        return json.dumps(myDaemon)
+    
+    def broadcastToAllNodes(self):
+        # kirim broadcast ke semua node
+        job = (grequests.post(destNode+"/"+command, data = self.sendHeartBeat()) for destNode in listNodeAddress)
+        content = grequests.map(job)
+        print(content)
+        return content
 
-    def do_GET(self):
-        try:
-            while True:
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(str(self.sendHeartBeat()).encode('utf-8'))
-                time.sleep(interval)
-        except Exception as ex:
-            self.send_response(500)
-            self.end_headers()
-            print(ex)
 
-server = HTTPServer(("", PORT), DaemonHandler)
-server.serve_forever()
+listNodeAddress = [line.rstrip('\n') for line in open('listNodeAddress.txt')]
+command = 'server'
+if __name__ == "__main__":
+    while True:
+        daemon = Daemon()
+        daemon.broadcastToAllNodes()
+        time.sleep(2)
