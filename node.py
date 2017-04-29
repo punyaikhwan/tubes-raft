@@ -129,7 +129,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             elif (len(args) == 3):
                 command = str(args[1])
                 n = str(args[2])
-                if (command == 'prime'):
+                if (command == 'prime' and isAlive):
                     self.sendPrimeRequest(n)
                 else:
                     self.sendResponse(400) # Bad Request
