@@ -1,3 +1,6 @@
-http://localhost:12000
-http://localhost:12001
-http://localhost:12002
+http://localhost:12000 leader
+http://localhost:12001 
+http://localhost:12002 
+http://localhost:12003 
+http://localhost:12004 
+http://localhost:12005 

@@ -21,6 +21,7 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def sendHeartbeatResponse(self):
     # mengirim heartbeat response, dilakukan oleh follower
+        global address
         global isAlreadyVoted
         global leaderAddress
         global listWorkerLoadLeader
@@ -35,7 +36,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         listWorkerLoadLeader = content[1]
         # response dengan punya dia
         print 'Sending heartbeat response...'
-        data = json.dumps(listWorkerLoad)
+        data = [address, json.dumps(listWorkerLoad)]
         self.sendResponse(200, data)
 
     def sendVoteResponse(self):
@@ -83,9 +84,11 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def sendPrimeRequest(self, n):
     # meminta bilangan prima ke worker, dilakukan oleh leader/follower
+        global listWorkerAddress
+        global listWorkerLoadLeader
         print 'Requesting prime number to worker...'
         # cari worker dengan load terkecil
-        idxWorkerAddress = listWorkerLoad.index(min(listWorkerLoad))
+        idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader))
         workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
         # request bilangan prima
         prime = str(urllib2.urlopen(workerAddress).read())
@@ -210,6 +213,8 @@ class Node():
 
     def sendHeartbeat(self):
     # mengirim heartbeat, dilakukan oleh leader
+        global listWorkerAddress
+        global listWorkerLoad
         print 'Sending heartbeat...'
         # persiapkan data dan kirim
         data = [address, listWorkerLoad]
@@ -218,6 +223,21 @@ class Node():
         # lakukan konsensus (dapatkan mayoritas)
         print 'Counting majority...'
         # UNDER CONSTRUCTION
+        listIsWorkerAlive = [0] * len(listWorkerAddress)
+        for response in listResponse:
+            if (response == None):
+                listWorkerLoadFollower = [1000] * len(listWorkerAddress)
+            else:
+                response = json.loads(response)
+            if (len(response) == 1):
+                listWorkerLoadFollower = [1000] * len(listWorkerAddress)
+            for i in range(len(listWorkerLoadFollower)):
+                if (listWorkerLoadFollower[i] != 1000):
+                    listIsWorkerAlive[i] += 1
+        for isWorkerAlive in listIsWorkerAlive:
+            if (isWorkerAlive < (len(listNodeAddress) / 2 + 1)): # mayoritas bilang node mati
+                idxWorkerAddress = listWorkerAddress.index()
+
 
     def sendVoteRequest(self):
     # mengirim vote, dilakukan oleh candidate
@@ -230,7 +250,7 @@ class Node():
             if (response.content == 'OK'):
                 voteCount += 1
         # hasil apakah terpilih mayoritas
-        return (voteCount >= (len(list_node) / 2 + 1))
+        return (voteCount >= (len(listNodeAddress) / 2 + 1))
 
 ################################################################################
 
@@ -249,12 +269,22 @@ listWorkerLoadLeader = []
 timeout = 1
 
 # PROGRAM UTAMA
+# parsing data untuk mengetahui node mana yang sebagai leader
+for i in range(len(listNodeAddress)):
+    nodeAddress = listNodeAddress[i].split(' ')
+    if (nodeAddress[1] == 'leader'):
+        leaderAddress = nodeAddress[0]
+    listNodeAddress[i] = nodeAddress[0]
+# tentukan port node dari terminal
 if (len(sys.argv) == 4):
     address = 'http://localhost:' + sys.argv[1]
-    timeout = sys.argv[2]
     leaderAddress = 'http://localhost:' + sys.argv[3]
-    node = Node()
-    node.initialize()
-    node.run()
+    if ((address in listNodeAddress) and (leaderAddress in listNodeAddress)):
+        timeout = sys.argv[2]
+        node = Node()
+        node.initialize()
+        node.run()
+    else:
+        print 'port not listed in listNodeAddress.txt'
 else:
     print 'usage: node.py <port> <timeout> <leaderPort>'
