@@ -3,6 +3,7 @@ import json
 import requests
 import sys
 import thread
+import time
 import urllib2
 from BaseHTTPServer import BaseHTTPRequestHandler
 from BaseHTTPServer import HTTPServer
@@ -11,96 +12,130 @@ from BaseHTTPServer import HTTPServer
 
 class NodeHandler(BaseHTTPRequestHandler):
     def getContent(self):
+    # mengambil data yang terkandung dalam content HTTP request
         contentLength = int(self.headers.getheader('content-length', 0))
         return self.rfile.read(contentLength)
 
     def sendResponse(self, code, data = ''):
+    # mengirim response dari HTTP request.
+    # bisa dipakai oleh prosedur lain, karena code dan data content bisa custom
         self.send_response(code)
         self.end_headers()
         self.wfile.write(str(data).encode('utf-8'))
 
     def sendHeartbeatResponse(self):
-    # mengirim heartbeat response, dilakukan oleh follower
+    # format content heartbeat:
+    # JSON [senderAddress, [listWorkerLoadSender]]
         global address
-        global isAlreadyVoted
+        global isAlive
         global leaderAddress
         global listWorkerLoadLeader
-        # membaca pesan pada heartbeat
+        global roundElection
+        if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
+            return
         print 'Reading heartbeat...'
         content = json.loads(self.getContent())
-        # cek apakah ini heartbeat dari leader baru
-        if (content[0] != leaderAddress):
-            leaderAddress = content[0]
-            isAlreadyVoted = False
-        # copy data dari leader
-        listWorkerLoadLeader = content[1]
-        # response dengan punya dia
+        if (content[0] != leaderAddress): # heartbeat bukan dari leader sekarang
+            if (leaderAddress == address): # merasa dirinya masih menjadi leader
+                leaderAddress = content[0]
+            else:
+                return
+        listWorkerLoadLeader = content[1] # copy data dari leader
         print 'Sending heartbeat response...'
         data = [address, json.dumps(listWorkerLoad)]
         self.sendResponse(200, data)
 
     def sendVoteResponse(self):
-    # mengirim vote response, dilakukan oleh follower
+    # format content vote:
+    # senderAddress
+        global isAlive
         global isAlreadyVoted
+        global roundElection
+        if (not isAlive): # lagi di-pause
+            return
         print 'Vote request received from ', self.getContent()
-        if (isAlreadyVoted):
-            print 'Sending vote response: OK'
+        if (isAlreadyVoted): # gabisa vote lebih dari sekali
+            print 'Sending vote response: NO'
             self.sendResponse(200, 'NO')
         else:
-            print 'Sending vote response: NO'
+            print 'Sending vote response: OK'
             self.sendResponse(200, 'OK')
             isAlreadyVoted = True
+            roundElection += 1
 
     def processHeartbeatServer(self):
+    # format content heartbeat server:
+    # JSON [senderAddress, senderLoad]
+        global isAlive
         global listWorkerAddress
         global listWorkerLoad
-        # membaca data worker
+        if (not isAlive):
+            return # lagi di-pause
+        print 'Reading workload info...'
         content = json.loads(self.getContent())
-        workerAddress = content[0]
-        print 'Workload info received from ', workerAddress
-        # simpan data workload
-        idxWorkerAddress = self.listWorkerAddress.index(workerAddress)
+        idxWorkerAddress = self.listWorkerAddress.index(content[0])
         listWorkerLoad[idxWorkerAddress] = content[1]
+        print 'Workload info', content[0], 'updated.'
+
+    def processElectionResult(self):
+    # format content election result
+    # JSON [senderAddress, 'WIN'] atau [senderAddress, 'LOSE']
+        global isAlive
+        global isAlreadyVoted
+        global isCandidate
+        global leaderAddress
+        global roundElection
+        if (not isAlive):
+            return # lagi di-pause
+        content = json.loads(self.getContent())
+        if (content[1] == 'WIN'): # candidate menang, ketua baru
+            leaderAddress = content[0]
+            roundElection = 0
+            isCandidate = False
+        else:
+            isCandidate = True
+            roundElection += 1
+        isAlreadyVoted = False
 
     def pause(self):
-    # simulasi ketika node mati
         global isAlive
-        if (isAlive):
-            print 'Paused.'
+        global isCandidate
+        if (isCandidate):
+            self.sendResponse(200, 'Can not shut down at this time.')
+        elif (isAlive):
+            print 'Node now down.'
             isAlive = False
             self.sendResponse(200, 'Node now down.')
         else:
             self.sendResponse(200, 'Node already down.')
 
     def resume(self):
-    # simulasi ketika node hidup kembali
         global isAlive
         if (isAlive):
             self.sendResponse(200, 'Node already up.')
         else:
-            print 'Resuming...'
+            print 'Node now up.'
             isAlive = True
             self.sendResponse(200, 'Node now up.')
 
     def sendPrimeRequest(self, n):
-    # meminta bilangan prima ke worker, dilakukan oleh leader/follower
+        global isAlive
         global listWorkerAddress
         global listWorkerLoadLeader
+        global roundElection
+        if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
+            return
         print 'Requesting prime number to worker...'
-        # cari worker dengan load terkecil
-        idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader))
+        idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader)) # cari worker dengan load terkecil
         workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
-        # request bilangan prima
-        prime = str(urllib2.urlopen(workerAddress).read())
-        # kirim hasilnya
-        print 'Sending prime number response: ', prime
+        prime = str(urllib2.urlopen(workerAddress).read()) # kirim request
+        print 'Forward prime number response: ', prime
         self.sendResponse(200, prime)
 
     def do_POST(self):
-    # menghandle request HTTP POST yang masuk ke node ini (dari node lain)
+    # method POST hanya di-request oleh node lain
         try:
-            args = self.path.split('/')
-            # mengecek command apa yang dikirim node lain
+            args = self.path.split('/') # mengambil command yang dikirim
             if (len(args) == 2):
                 command = args[1]
                 if (command == 'heartbeat'): # dari leader
@@ -109,6 +144,8 @@ class NodeHandler(BaseHTTPRequestHandler):
                     self.sendVoteResponse()
                 elif (command == 'server'): # dari server
                     self.processHeartbeatServer()
+                elif (command == 'election'): # dari candidate
+                    self.processElectionResult()
                 else:
                     self.sendResponse(400) # Bad Request
             else:
@@ -117,10 +154,9 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.sendResponse(500) # Internal Server Error
 
     def do_GET(self):
-    # menghandle request HTTP GET yang masuk ke node ini (dari client)
+    # method GET hanya di-request oleh client (melalui browser)
         try:
-            args = self.path.split('/')
-            # mengecek command apa yang diminta client
+            args = self.path.split('/') # mengambil command yang diminta
             if (len(args) == 2):
                 command = str(args[1])
                 if (command == 'pause'):
@@ -145,112 +181,98 @@ class NodeHandler(BaseHTTPRequestHandler):
 ################################################################################
 
 class Node():
-    def initialize(self):
-    # node pertama kali dinyalakan
+    def __init__(self):
         global address
         print 'Starting... '
-        self.isCandidate = False
-        # nyalakan handler
-        portNode = address.split(':')[2]
+        portNode = address.split(':')[2] # mengambil port
         self.handler = HTTPServer(("", int(portNode)), NodeHandler)
-        thread.start_new_thread(self.handler.serve_forever, ())
+        thread.start_new_thread(self.handler.serve_forever, ()) # nyalakan handler
 
     def run(self):
-    # program utama node, memilih peran sebagai apa
+    # node berganti peran antara leader, candidate, atau follower
         global address
+        global isCandidate
         global leaderAddress
         while(True):
             print 'Determining job...'
             if (leaderAddress == address):
                 self.leaderMain()
-            elif (self.isCandidate):
+            elif (isCandidate):
                 self.candidateMain()
             else:
                 self.followerMain()
 
     def leaderMain(self):
     # program utama ketika berperan sebagai leader
+        global address
         global isAlive
+        global leaderAddress
         print 'I am a leader!'
-        while (True):
-            if (isAlive):
-                # UNDER CONSTRUCTION, konsep doang ini
-                self.sendHeartbeat()
-
-    def followerMain(self):
-    # program utama ketika berperan sebagai follower
-        global isAlive
-        print 'I am a follower.'
-        while (True):
-            if (isAlive):
-                # UNDER CONSTRUCTION, konsep doang ini
-                isLeaderDead = False
-                if (isLeaderDead):
-                    self.isCandidate = True
-                    break
+        while ((leaderAddress == address) and isAlive):
+            self.sendHeartbeat()
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
         global address
+        global isCandidate
         global leaderAddress
+        global timeout
         print 'I am a candidate!'
-        # minta vote, apakah mayoritas memilih dia
-        if (self.sendVoteRequest()):
-            self.isCandidate = False
+        if (self.sendVoteRequest()): # minta vote, apakah mayoritas memilih dia
+            isCandidate = False
             leaderAddress = address # terpilih jadi leader
+            data = json.dumps(address, 'WIN')
+            self.broadcastToOtherNodes('/election', data)
+        else:
+            data = json.dumps(address, 'LOSE')
+            self.broadcastToOtherNodes('/election', data)
+            time.sleep(timeout)
+
+    def followerMain(self):
+    # program utama ketika berperan sebagai follower
+        global isAlive
+        global isCandidate
+        global roundElection
+        global timeoutCountdown
+        print 'I am a follower.'
+        while ((roundElection == 0) and isAlive):
+            if (timeoutCountdown <= 0):
+                isCandidate = True
+                roundElection += 1
 
     def broadcastToOtherNodes(self, command, data = ''):
         global address
         global listNodeAddress
-        # persiapkan node tujuan
-        listDestinationAddress = []
+        listDestinationAddress = [] # node selain node sendiri
         for nodeAddress in listNodeAddress:
             if (nodeAddress != address):
                 listDestinationAddress.append(nodeAddress + command)
-        # kirim
         job = (grequests.post(destinationAddress, data = data) for destinationAddress in listDestinationAddress)
-        return grequests.map(job)
+        return grequests.map(job) # kirim
 
     def sendHeartbeat(self):
-    # mengirim heartbeat, dilakukan oleh leader
         global listWorkerAddress
         global listWorkerLoad
         print 'Sending heartbeat...'
-        # persiapkan data dan kirim
         data = [address, listWorkerLoad]
         data = json.dumps(data)
         listResponse = self.broadcastToOtherNodes('/heartbeat', data)
-        # lakukan konsensus (dapatkan mayoritas)
         print 'Counting majority...'
+        # format content heartbeat response:
+        # JSON [senderAddress, [listWorkerLoadSender]]
         # UNDER CONSTRUCTION
-        listIsWorkerAlive = [0] * len(listWorkerAddress)
-        for response in listResponse:
-            if (response == None):
-                listWorkerLoadFollower = [1000] * len(listWorkerAddress)
-            else:
-                response = json.loads(response)
-            if (len(response) == 1):
-                listWorkerLoadFollower = [1000] * len(listWorkerAddress)
-            for i in range(len(listWorkerLoadFollower)):
-                if (listWorkerLoadFollower[i] != 1000):
-                    listIsWorkerAlive[i] += 1
-        for isWorkerAlive in listIsWorkerAlive:
-            if (isWorkerAlive < (len(listNodeAddress) / 2 + 1)): # mayoritas bilang node mati
-                idxWorkerAddress = listWorkerAddress.index()
-
 
     def sendVoteRequest(self):
-    # mengirim vote, dilakukan oleh candidate
         global address
         print 'Requesting vote...'
         listResponse = self.broadcastToOtherNodes('/vote', address)
-        # proses listResponse
+        # format content vote response:
+        # 'OK' or 'NO'
         voteCount = 0
         for response in listResponse:
             if (response.content == 'OK'):
                 voteCount += 1
-        # hasil apakah terpilih mayoritas
-        return (voteCount >= (len(listNodeAddress) / 2 + 1))
+        return (voteCount >= (len(listNodeAddress) / 2 + 1)) # hasil apakah terpilih mayoritas
 
 ################################################################################
 
@@ -261,30 +283,32 @@ maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
 address = ''
 isAlive = True
 isAlreadyVoted = False
+isCandidate = False
 leaderAddress = ''
 listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
 listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
 listWorkerLoad = [maxload] * len(listWorkerAddress)
 listWorkerLoadLeader = []
+roundElection = 0
 timeout = 1
+timeoutCountdown = timeout
 
 # PROGRAM UTAMA
-# parsing data untuk mengetahui node mana yang sebagai leader
+# parsing data untuk mengetahui node-node yang terdaftar
 for i in range(len(listNodeAddress)):
     nodeAddress = listNodeAddress[i].split(' ')
     if (nodeAddress[1] == 'leader'):
         leaderAddress = nodeAddress[0]
     listNodeAddress[i] = nodeAddress[0]
 # tentukan port node dari terminal
-if (len(sys.argv) == 4):
-    address = 'http://localhost:' + sys.argv[1]
-    leaderAddress = 'http://localhost:' + sys.argv[3]
-    if ((address in listNodeAddress) and (leaderAddress in listNodeAddress)):
+if (len(sys.argv) == 3):
+    address = 'http://' + sys.argv[1]
+    # cek apakah IP:port ada di list
+    if (address in listNodeAddress):
         timeout = sys.argv[2]
-        node = Node()
-        node.initialize()
-        node.run()
+        timeoutCountdown = timeout
+        Node().run()
     else:
-        print 'port not listed in listNodeAddress.txt'
+        print 'address(es) not listed in listNodeAddress.txt'
 else:
-    print 'usage: node.py <port> <timeout> <leaderPort>'
+    print 'usage: node.py <IP:port> <timeout>'
