@@ -33,6 +33,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         global roundElection
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
             return
+        restoreCountdown()
         print 'Reading heartbeat...'
         content = json.loads(self.getContent())
         if (content[0] != leaderAddress): # heartbeat bukan dari leader sekarang
@@ -187,6 +188,7 @@ class Node():
         portNode = address.split(':')[2] # mengambil port
         self.handler = HTTPServer(("", int(portNode)), NodeHandler)
         thread.start_new_thread(self.handler.serve_forever, ()) # nyalakan handler
+        thread.start_new_thread(countdown, ()) # nyalakan countdown timeout
 
     def run(self):
     # node berganti peran antara leader, candidate, atau follower
@@ -208,15 +210,16 @@ class Node():
         global isAlive
         global leaderAddress
         print 'I am a leader!'
-        while ((leaderAddress == address) and isAlive):
-            self.sendHeartbeat()
+        while (leaderAddress == address):
+            if (isAlive):
+                self.sendHeartbeat()
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
         global address
         global isCandidate
         global leaderAddress
-        global timeout
+        global timeoutCountdown
         print 'I am a candidate!'
         if (self.sendVoteRequest()): # minta vote, apakah mayoritas memilih dia
             isCandidate = False
@@ -226,7 +229,9 @@ class Node():
         else:
             data = json.dumps(address, 'LOSE')
             self.broadcastToOtherNodes('/election', data)
-            time.sleep(timeout)
+            restoreCountdown()
+            while (timeoutCountdown > 0):
+                pass # 'sleep' dengan cara bukan sleep
 
     def followerMain(self):
     # program utama ketika berperan sebagai follower
@@ -270,7 +275,9 @@ class Node():
         # 'OK' or 'NO'
         voteCount = 0
         for response in listResponse:
-            if (response.content == 'OK'):
+            if (response == None):
+                pass
+            elif (response.content == 'OK'):
                 voteCount += 1
         return (voteCount >= (len(listNodeAddress) / 2 + 1)) # hasil apakah terpilih mayoritas
 
@@ -290,8 +297,22 @@ listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')
 listWorkerLoad = [maxload] * len(listWorkerAddress)
 listWorkerLoadLeader = []
 roundElection = 0
-timeout = 1
-timeoutCountdown = timeout
+timeout = int(1)
+timeoutCountdown = int(1000)
+
+# PROSEDUR
+def restoreCountdown():
+    global timeout
+    global timeoutCountdown
+    timeoutCountdown = int(timeout * 1000)
+
+def countdown():
+    global timeoutCountdown
+    timeBefore = int(time.time() * 1000)
+    while(True):
+        currentTime = int(time.time() * 1000)
+        timeoutCountdown -= (currentTime - timeBefore)
+        timeBefore = currentTime
 
 # PROGRAM UTAMA
 # parsing data untuk mengetahui node-node yang terdaftar
@@ -305,8 +326,8 @@ if (len(sys.argv) == 3):
     address = 'http://' + sys.argv[1]
     # cek apakah IP:port ada di list
     if (address in listNodeAddress):
-        timeout = sys.argv[2]
-        timeoutCountdown = timeout
+        timeout = int(sys.argv[2])
+        restoreCountdown()
         Node().run()
     else:
         print 'address(es) not listed in listNodeAddress.txt'
