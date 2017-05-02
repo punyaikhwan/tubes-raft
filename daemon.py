@@ -4,18 +4,18 @@ Informasi dikirim setiap delay waktu.
 Caranya, lakukan request ke IP address:port'''
 
 # MODULE
+from json import dumps
+from psutil import cpu_percent
+from time import sleep
 import grequests
-import json
-import psutil
 import sys
-import time
 
 # PROSEDUR
 def getUsage():
-    return psutil.cpu_percent(interval = 1)
+    return cpu_percent(interval = 1)
 
 def getData():
-    return json.dumps({"id": address, "usage": getUsage()})
+    return dumps({"id": address, "usage": getUsage()})
 
 def broadcastToAllNodes():
     data = getData()
@@ -32,6 +32,10 @@ listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')
 delay = 2
 
 # PROGRAM UTAMA
+# parsing data untuk mengetahui node-node yang terdaftar
+for i in range(len(listNodeAddress)):
+    listNodeAddress[i] = listNodeAddress[i].split(' ')[0]
+# run
 if (len(sys.argv) == 2):
     address = 'http://' + sys.argv[1]
     # cek apakah IP:port ada di list
@@ -41,6 +45,6 @@ if (len(sys.argv) == 2):
         # run daemon
         while True:
             broadcastToAllNodes()
-            time.sleep(delay)
+            sleep(delay)
 else:
     print 'usage: daemon.py <IP:port>'
