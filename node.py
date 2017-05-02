@@ -35,6 +35,8 @@ class NodeHandler(BaseHTTPRequestHandler):
             if (isRestored):
                 leaderAddress = content[0] # otomatis jadi follower
                 isRestored = False
+            else:
+                return
         restoreCountdown() # leader masih hidup, timeout dikembalikan ke awal
         listWorkerLoadLeader = content[1] # copy data dari leader
         data = json.dumps([address, listWorkerLoad])
@@ -80,7 +82,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         if (not isAlive):
             return # lagi di-pause
         content = json.loads(self.getContent())
-        print 'Election result received:', content
+        print 'Election result received:', content[1]
         isAlreadyVoted = False
         if (content[1] == 'WIN'): # candidate menang, ketua baru
             leaderAddress = content[0]
@@ -201,21 +203,21 @@ class Node():
     def run(self):
     # node berganti peran antara leader, candidate, atau follower
         while(True):
-            if (leaderAddress == address):
-                print 'I am a leader!'
-                self.leaderMain()
-            elif (isCandidate):
-                print 'I am a candidate!'
-                self.candidateMain()
-            else:
-                print 'I am a follower.'
-                self.followerMain()
+            if (isAlive): # kalo lagi mati ya gausah milih peran
+                if (leaderAddress == address):
+                    print 'I am a leader!'
+                    self.leaderMain()
+                elif (isCandidate):
+                    print 'I am a candidate!'
+                    self.candidateMain()
+                elif (roundElection == 0):
+                    print 'I am a follower.'
+                    self.followerMain()
 
     def leaderMain(self):
     # program utama ketika berperan sebagai leader
-        while (leaderAddress == address):
-            if (isAlive):
-                self.sendHeartbeat()
+        while (isAlive and (leaderAddress == address)):
+            self.sendHeartbeat()
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
@@ -225,12 +227,12 @@ class Node():
         if (self.sendVoteRequest()): # minta vote, apakah mayoritas memilih dia
             isCandidate = False
             leaderAddress = address # terpilih jadi leader
-            data = json.dumps(address, 'WIN')
+            data = json.dumps([address, 'WIN'])
             print 'Broadcasting election result: WIN'
             self.broadcastToOtherNodes('/election', data)
             roundElection = 0
         else:
-            data = json.dumps(address, 'LOSE')
+            data = json.dumps([address, 'LOSE'])
             print 'Broadcasting election result: LOSE'
             self.broadcastToOtherNodes('/election', data)
             roundElection += 1
@@ -240,10 +242,11 @@ class Node():
     # program utama ketika berperan sebagai follower
         global isCandidate
         global roundElection
-        while ((roundElection == 0) and isAlive):
+        while (isAlive and (roundElection == 0)):
             if (timeoutCountdown < 0):
                 isCandidate = True
                 roundElection += 1
+                break
 
     def broadcastToOtherNodes(self, command, data = ''):
         listDestinationAddress = [] # node selain node sendiri
@@ -274,7 +277,7 @@ class Node():
         for i in range(len(listWorkerAddress)):
             workerLoadFollower = listWorkerLoadFollower[i]
             # kalo mayoritas bilang mati, matiin
-            if (workerLoadFollower >= (maxload * (len(listNodeAddress) / 2 + 1))):
+            if (workerLoadFollower >= (maxload * int(len(listNodeAddress) / 2))):
                 listWorkerLoad[i] = maxload
                 listWorkerLoadLeader[i] = maxload
             # kalo nggak, itung rata-ratanya
