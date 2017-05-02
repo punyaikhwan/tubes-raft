@@ -26,34 +26,33 @@ class NodeHandler(BaseHTTPRequestHandler):
     def sendHeartbeatResponse(self):
     # format content heartbeat:
     # JSON [senderAddress, [listWorkerLoadSender]]
-        global address
-        global isAlive
         global leaderAddress
         global listWorkerLoadLeader
-        global roundElection
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
             return
         restoreCountdown()
-        print 'Reading heartbeat...'
         content = json.loads(self.getContent())
+        print 'Heartbeat received from', content[0], ':', content[1]
         if (content[0] != leaderAddress): # heartbeat bukan dari leader sekarang
-            if (leaderAddress == address): # merasa dirinya masih menjadi leader
+            if (address == leaderAddress): # merasa dirinya masih menjadi leader
                 leaderAddress = content[0]
             else:
                 return
         listWorkerLoadLeader = content[1] # copy data dari leader
-        print 'Sending heartbeat response...'
         data = [address, json.dumps(listWorkerLoad)]
+        print 'Sending heartbeat response:', data[1]
         self.sendResponse(200, data)
 
     def sendVoteResponse(self):
     # format content vote:
     # senderAddress
-        global isAlive
         global isAlreadyVoted
+        global leaderAddress
         global roundElection
         if (not isAlive): # lagi di-pause
             return
+        if (address == leaderAddress):
+            leaderAddress = ''
         print 'Vote request received from ', self.getContent()
         if (isAlreadyVoted): # gabisa vote lebih dari sekali
             print 'Sending vote response: NO'
@@ -67,21 +66,17 @@ class NodeHandler(BaseHTTPRequestHandler):
     def processHeartbeatServer(self):
     # format content heartbeat server:
     # JSON [senderAddress, senderLoad]
-        global isAlive
-        global listWorkerAddress
         global listWorkerLoad
         if (not isAlive):
             return # lagi di-pause
-        print 'Reading workload info...'
         content = json.loads(self.getContent())
         idxWorkerAddress = self.listWorkerAddress.index(content[0])
         listWorkerLoad[idxWorkerAddress] = content[1]
-        print 'Workload info', content[0], 'updated.'
+        print 'Workload info', content[0], 'updated:', content[1]
 
     def processElectionResult(self):
     # format content election result
     # JSON [senderAddress, 'WIN'] atau [senderAddress, 'LOSE']
-        global isAlive
         global isAlreadyVoted
         global isCandidate
         global leaderAddress
@@ -89,6 +84,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         if (not isAlive):
             return # lagi di-pause
         content = json.loads(self.getContent())
+        print 'Election result received:', content
         if (content[1] == 'WIN'): # candidate menang, ketua baru
             leaderAddress = content[0]
             roundElection = 0
@@ -100,7 +96,6 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def pause(self):
         global isAlive
-        global isCandidate
         if (isCandidate):
             self.sendResponse(200, 'Can not shut down at this time.')
         elif (isAlive):
@@ -120,15 +115,11 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.sendResponse(200, 'Node now up.')
 
     def sendPrimeRequest(self, n):
-        global isAlive
-        global listWorkerAddress
-        global listWorkerLoadLeader
-        global roundElection
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
             return
-        print 'Requesting prime number to worker...'
         idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader)) # cari worker dengan load terkecil
         workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
+        print 'Requesting prime number to:', workerAddress
         prime = str(urllib2.urlopen(workerAddress).read()) # kirim request
         print 'Forward prime number response: ', prime
         self.sendResponse(200, prime)
@@ -182,72 +173,62 @@ class NodeHandler(BaseHTTPRequestHandler):
 ################################################################################
 
 class Node():
-    def __init__(self):
-        global address
+    def __init__(self, port = ''):
         print 'Starting... '
-        portNode = address.split(':')[2] # mengambil port
-        self.handler = HTTPServer(("", int(portNode)), NodeHandler)
+        self.handler = HTTPServer(("", port), NodeHandler)
         thread.start_new_thread(self.handler.serve_forever, ()) # nyalakan handler
         thread.start_new_thread(countdown, ()) # nyalakan countdown timeout
 
     def run(self):
     # node berganti peran antara leader, candidate, atau follower
-        global address
-        global isCandidate
-        global leaderAddress
         while(True):
-            print 'Determining job...'
             if (leaderAddress == address):
+                print 'I am a leader!'
                 self.leaderMain()
             elif (isCandidate):
+                print 'I am a candidate!'
                 self.candidateMain()
             else:
+                print 'I am a follower.'
                 self.followerMain()
 
     def leaderMain(self):
     # program utama ketika berperan sebagai leader
-        global address
-        global isAlive
-        global leaderAddress
-        print 'I am a leader!'
         while (leaderAddress == address):
             if (isAlive):
                 self.sendHeartbeat()
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
-        global address
         global isCandidate
         global leaderAddress
-        global timeoutCountdown
-        print 'I am a candidate!'
+        global roundElection
         if (self.sendVoteRequest()): # minta vote, apakah mayoritas memilih dia
             isCandidate = False
             leaderAddress = address # terpilih jadi leader
             data = json.dumps(address, 'WIN')
+            print 'Broadcasting election result: WIN'
             self.broadcastToOtherNodes('/election', data)
+            roundElection = 0
         else:
             data = json.dumps(address, 'LOSE')
+            print 'Broadcasting election result: LOSE'
             self.broadcastToOtherNodes('/election', data)
+            roundElection += 1
             restoreCountdown()
             while (timeoutCountdown > 0):
                 pass # 'sleep' dengan cara bukan sleep
 
     def followerMain(self):
     # program utama ketika berperan sebagai follower
-        global isAlive
         global isCandidate
         global roundElection
-        global timeoutCountdown
-        print 'I am a follower.'
         while ((roundElection == 0) and isAlive):
             if (timeoutCountdown <= 0):
                 isCandidate = True
                 roundElection += 1
 
     def broadcastToOtherNodes(self, command, data = ''):
-        global address
-        global listNodeAddress
         listDestinationAddress = [] # node selain node sendiri
         for nodeAddress in listNodeAddress:
             if (nodeAddress != address):
@@ -256,24 +237,22 @@ class Node():
         return grequests.map(job) # kirim
 
     def sendHeartbeat(self):
-        global listWorkerAddress
-        global listWorkerLoad
-        print 'Sending heartbeat...'
         data = [address, listWorkerLoad]
         data = json.dumps(data)
+        print 'Broadcasting heartbeat:', listWorkerLoad
         listResponse = self.broadcastToOtherNodes('/heartbeat', data)
-        print 'Counting majority...'
+        print 'Processing heartbeat response:', listResponse
         # format content heartbeat response:
         # JSON [senderAddress, [listWorkerLoadSender]]
         # UNDER CONSTRUCTION
 
     def sendVoteRequest(self):
-        global address
-        print 'Requesting vote...'
+        print 'Broadcasting vote round:', roundElection
         listResponse = self.broadcastToOtherNodes('/vote', address)
         # format content vote response:
         # 'OK' or 'NO'
-        voteCount = 0
+        print 'Processing vote response:', listResponse
+        voteCount = 1 # dia pasti milih dia sendiri wk
         for response in listResponse:
             if (response == None):
                 pass
@@ -283,28 +262,9 @@ class Node():
 
 ################################################################################
 
-# KONSTANTA
-maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
-
-# GLOBAL VARIABLE, DIPAKE DI Node DAN NodeHandler
-address = ''
-isAlive = True
-isAlreadyVoted = False
-isCandidate = False
-leaderAddress = ''
-listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
-listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
-listWorkerLoad = [maxload] * len(listWorkerAddress)
-listWorkerLoadLeader = []
-roundElection = 0
-timeout = int(1)
-timeoutCountdown = int(1000)
-
-# PROSEDUR
-def restoreCountdown():
-    global timeout
+def restoreCountdown(seconds = timeout):
     global timeoutCountdown
-    timeoutCountdown = int(timeout * 1000)
+    timeoutCountdown = int(seconds * 1000)
 
 def countdown():
     global timeoutCountdown
@@ -314,7 +274,24 @@ def countdown():
         timeoutCountdown -= (currentTime - timeBefore)
         timeBefore = currentTime
 
-# PROGRAM UTAMA
+################################################################################
+
+address = ''
+isAlive = True
+isAlreadyVoted = False
+isCandidate = False
+leaderAddress = ''
+listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
+listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
+listWorkerLoad = [maxload] * len(listWorkerAddress)
+listWorkerLoadLeader = []
+maxload = 1000 # jika worker mati maka elemen ybs pada listWorkerLoad = maxload
+roundElection = 0
+timeout = int(1)
+timeoutCountdown = int(1000)
+
+################################################################################
+
 # parsing data untuk mengetahui node-node yang terdaftar
 for i in range(len(listNodeAddress)):
     nodeAddress = listNodeAddress[i].split(' ')
@@ -328,7 +305,7 @@ if (len(sys.argv) == 3):
     if (address in listNodeAddress):
         timeout = int(sys.argv[2])
         restoreCountdown()
-        Node().run()
+        Node(address.split(':')[2]).run()
     else:
         print 'address(es) not listed in listNodeAddress.txt'
 else:

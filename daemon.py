@@ -1,42 +1,46 @@
 '''Kelas Daemon
 Berfungsi mengirimkan hearthbeat berupa ID dan CPU usage.
-Informasi dikirim setiap interval waktu.
-Caranya, lakukan pemanggilan ke IP address:port'''
+Informasi dikirim setiap delay waktu.
+Caranya, lakukan request ke IP address:port'''
 
-from __future__ import print_function
-import os
-import psutil
-import socket
+# MODULE
 import grequests
-import time
 import json
+import psutil
+import sys
+import time
 
-interval = 2
+# PROSEDUR
+def getUsage():
+    return psutil.cpu_percent(interval = 1)
 
-class Daemon():
-    def getCPUusage(self):
-        return psutil.cpu_percent(interval=1)
+def getData():
+    return json.dumps({"id": address, "usage": getUsage()})
 
-    def getID(self):
-        #ID using IP
-        return socket.gethostbyname(socket.gethostname())
+def broadcastToAllNodes():
+    data = getData()
+    print 'Broadcasting workload info:', data
+    # kirim broadcast ke semua node
+    job = (grequests.post(nodeAddress + "/server", data = data) for nodeAddress in listNodeAddress)
+    responses = grequests.map(job)
+    print 'Responses:', responses
 
-    def sendHeartBeat(self):
-        myDaemon = {"id": self.getID(), "usage": self.getCPUusage()}
-        return json.dumps(myDaemon)
-    
-    def broadcastToAllNodes(self):
-        # kirim broadcast ke semua node
-        job = (grequests.post(destNode+"/"+command, data = self.sendHeartBeat()) for destNode in listNodeAddress)
-        content = grequests.map(job)
-        print(content)
-        return content
-
-
+# VARIABLE
+address = ''
 listNodeAddress = [line.rstrip('\n') for line in open('listNodeAddress.txt')]
-command = 'server'
-if __name__ == "__main__":
-    while True:
-        daemon = Daemon()
-        daemon.broadcastToAllNodes()
-        time.sleep(2)
+listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
+delay = 2
+
+# PROGRAM UTAMA
+if (len(sys.argv) == 2):
+    address = 'http://' + sys.argv[1]
+    # cek apakah IP:port ada di list
+    if (address not in listWorkerAddress):
+        print address, 'not listed in listWorkerAddress.txt'
+    else:
+        # run daemon
+        while True:
+            broadcastToAllNodes()
+            time.sleep(delay)
+else:
+    print 'usage: daemon.py <IP:port>'
