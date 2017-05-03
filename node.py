@@ -87,6 +87,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         if (content[1] == 'WIN'): # candidate menang, ketua baru
             leaderAddress = content[0]
             roundElection = 0
+            restoreCountdown()
         else:
             isCandidate = True # candidate kalah, dia jadi candidate round selanjutnya
             roundElection += 1
