@@ -224,6 +224,7 @@ class Node():
     # program utama ketika berperan sebagai leader
         while (isAlive and (leaderAddress == address)):
             self.sendHeartbeat()
+            sleepHeartbeat(1000);
 
     def candidateMain(self):
     # program utama ketika berperan sebagai candidate leader
@@ -319,6 +320,11 @@ class Node():
         return (voteCount >= (len(listNodeAddress) / 2 + 1)) # hasil apakah lebih dari kuorum
 
 ################################################################################
+
+def sleepHeartbeat(milliseconds):
+    finishTime = int(time() * 1000) + milliseconds
+    while ((int(time() * 1000) < finishTime) and (not isIncomingVote)):
+        pass
 
 def sleepByTimeout(): # 'sleep' dengan cara bukan sleep
     restoreCountdown()
