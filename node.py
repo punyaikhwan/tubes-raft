@@ -133,17 +133,22 @@ class NodeHandler(BaseHTTPRequestHandler):
         idxWorkerAddress = listWorkerAddress.index(content['id'])
         listWorkerLoad[idxWorkerAddress] = content['usage']
         print 'Workload info', content['id'], 'updated:', content['usage']
+        restoreCountdownWorker(idxWorkerAddress)
         self.sendResponse()
 
     def sendPrimeRequest(self, n):
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
             return
         idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader)) # cari worker dengan load terkecil
-        workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
-        print 'Requesting prime number to:', workerAddress
-        prime = str(urlopen(workerAddress).read()) # kirim request
-        print 'Forward prime number response: ', prime
-        self.sendResponse(200, prime)
+        # cek apakah semua server mati
+        if (listWorkerLoadLeader[idxWorkerAddress] == maxload):
+            self.sendResponse(200, 'No server running')
+        else:
+            workerAddress = listWorkerAddress[idxWorkerAddress] + '/' + n
+            print 'Requesting prime number to:', workerAddress
+            prime = str(urlopen(workerAddress).read()) # kirim request
+            print 'Forward prime number response: ', prime
+            self.sendResponse(200, prime)
 
     def do_POST(self):
     # method POST hanya di-request oleh node lain
@@ -267,25 +272,37 @@ class Node():
         # format content heartbeat response:
         # JSON [followerAddress, [listWorkerLoadFollower]]
         listWorkerLoadFollower = [0] * len(listWorkerAddress)
+        halfFollower = int(len(listNodeAddress) / 2)
+        nFollowerDown = 0
+        nWorkerDown = [0] * len(listWorkerAddress)
         for response in listResponse:
             if (response is None):
+                nFollowerDown += 1
                 pass
             else:
                 content = json.loads(response.content)
                 for i in range(len(content[1])):
-                    listWorkerLoadFollower[i] += int(content[1][i])
-        # update berdasarkan mayoritas
-        for i in range(len(listWorkerAddress)):
-            workerLoadFollower = listWorkerLoadFollower[i]
-            # kalo mayoritas bilang mati, matiin
-            if (workerLoadFollower >= (maxload * int(len(listNodeAddress) / 2))):
-                listWorkerLoad[i] = maxload
-                listWorkerLoadLeader[i] = maxload
-            # kalo nggak, itung rata-ratanya
-            else:
-                average = (workerLoadFollower % maxload) / len(listNodeAddress)
-                listWorkerLoad[i] = average
-                listWorkerLoadLeader[i] = average
+                    usage = int(content[1][i])
+                    if (usage == maxload):
+                        nWorkerDown[i] += 1
+                    else:
+                        listWorkerLoadFollower[i] += int(content[1][i])
+        if (nFollowerDown >= halfFollower):
+            # mayoritas follower down, gak bisa melaksanakan konsensus
+            pass
+        else:
+            # update berdasarkan mayoritas
+            for i in range(len(listWorkerAddress)):
+                workerLoadFollower = listWorkerLoadFollower[i]
+                # kalo mayoritas bilang mati, matiin
+                if (nWorkerDown[i] >= halfFollower):
+                    listWorkerLoad[i] = maxload
+                    listWorkerLoadLeader[i] = maxload
+                # kalo nggak, itung rata-ratanya
+                else:
+                    average = (workerLoadFollower + listWorkerLoad[i]) / (len(listNodeAddress) - nFollowerDown)
+                    listWorkerLoad[i] = average
+                    listWorkerLoadLeader[i] = average
 
     def sendVoteRequest(self):
         print 'Broadcasting vote, round:', roundElection
@@ -308,6 +325,10 @@ def sleepByTimeout(): # 'sleep' dengan cara bukan sleep
     while ((timeoutCountdown > 0) and (not isIncomingVote)):
         pass
 
+def restoreCountdownWorker(idx):
+    global listWorkerTimeout
+    listWorkerTimeout[int(idx)] = int(timeout * 1000)
+
 def restoreCountdown(seconds = None):
     global timeoutCountdown
     if (seconds is None):
@@ -315,11 +336,21 @@ def restoreCountdown(seconds = None):
     timeoutCountdown = int(seconds * 1000)
 
 def countdown():
+    global listWorkerLoad
+    global listWorkerTimeout
     global timeoutCountdown
     timeBefore = int(time() * 1000)
     while(True):
         currentTime = int(time() * 1000)
-        timeoutCountdown -= (currentTime - timeBefore)
+        delta = currentTime - timeBefore
+        # kurangi timeout node
+        timeoutCountdown -= delta
+        # kurangi timeout tiap server
+        for i in range(len(listWorkerAddress)):
+            listWorkerTimeout[i] -= delta
+            # kalo udah 0, anggap node tersebut mati
+            if (listWorkerTimeout[i] <= 0):
+                listWorkerLoad[i] = maxload
         timeBefore = currentTime
 
 ################################################################################
@@ -337,6 +368,7 @@ listNodeAddress =[line.rstrip('\n') for line in open('listNodeAddress.txt')]
 listWorkerAddress = [line.rstrip('\n') for line in open('listWorkerAddress.txt')]
 listWorkerLoad = [maxload] * len(listWorkerAddress)
 listWorkerLoadLeader = [maxload] * len(listWorkerAddress)
+listWorkerTimeout = [0] * len(listWorkerAddress)
 roundElection = 0
 timeout = int()
 timeoutCountdown = int()
