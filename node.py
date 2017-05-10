@@ -26,6 +26,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         global leaderAddress
         global listWorkerLoadLeader
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
+            self.sendResponse(500)
             return
         content = json.loads(self.getContent())
         print 'Heartbeat received from', content[0], ':', content[1]
@@ -53,6 +54,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         global leaderAddress
         global roundElection
         if (not isAlive): # lagi di-pause
+            self.sendResponse(200, 'NO')
             return
         else:
             isIncomingVote = True # untuk break sleepByTimeout()
@@ -80,6 +82,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         global leaderAddress
         global roundElection
         if (not isAlive):
+            self.sendResponse()
             return # lagi di-pause
         content = json.loads(self.getContent())
         print 'Election result received:', content[1]
@@ -138,6 +141,7 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def sendPrimeRequest(self, n):
         if ((not isAlive) or roundElection > 0): # lagi di-pause atau lagi di masa pemilihan leader
+            self.sendResponse(500, 'Node is down or doing election')
             return
         idxWorkerAddress = listWorkerLoadLeader.index(min(listWorkerLoadLeader)) # cari worker dengan load terkecil
         # cek apakah semua server mati
